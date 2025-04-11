@@ -1,3 +1,6 @@
+// No copyright claimed.
+// Released under the MIT License.
+// Author: Michael E. Jolley
 
 #include <Windows.h>
 #include <windowsx.h> // for GET_X_LPARAM and GET_Y_LPARAM
@@ -5,41 +8,40 @@
 
 #define MIN_WIDTH  350
 #define MIN_HEIGHT 245
-#define BAR_GAP 176
-#define APP_NAME L"PkittyWidget"
+#define BAR_GAP    176
+#define APP_NAME   L"PkittyWidget"
 
 enum CTX_MENU_ITEM_IDs {
-    ID_CTX_EXIT = 2000,
+    ID_CTX_EXIT            = 2000,
     ID_CTX_RESET,
     ID_CTX_LOCK_POSITION,
     ID_CTX_UNLOCK_POSITION,
     ID_TRAY_ICON,
 };
 
-enum KITTY_FRAME {
+enum KITTY_FRAME : int {
     NO_PAWS_DOWN    = 0,
     FIRST_PAW_DOWN  = 1,
     SECOND_PAW_DOWN = 2
 };
-int frame = NO_PAWS_DOWN;
+int g_iFrame = NO_PAWS_DOWN;
 
-HWND  hwApp;
-HINSTANCE g_hInstance;
+HWND       g_hwApp;
+HINSTANCE  g_hInstance;
+HBITMAP    g_hbmCat;
+BITMAP     g_bm;
 
-HBITMAP hbmCat;
-BITMAP bm;
-
-BOOL bShouldQuit   = FALSE;
-INT iWindowX       = 0;
-INT iWindowY       = 0;
-INT iWindowWidth   = MIN_WIDTH;
-INT iWindowHeight  = MIN_HEIGHT;
-INT iStartBarTop   = 0;
-BOOL bPositionLock = FALSE;
-BOOL bDragging     = FALSE;
+BOOL g_bShouldQuit    = FALSE;
+INT  g_iWindowX       = 0;
+INT  g_iWindowY       = 0;
+INT  g_iWindowWidth   = MIN_WIDTH;
+INT  g_iWindowHeight  = MIN_HEIGHT;
+INT  g_iStartBarTop   = 0;
+BOOL g_bPositionLock  = FALSE;
+BOOL g_bDragging      = FALSE;
 
 
-BYTE keys[30] = {
+constexpr BYTE g_KEYS[30] = {
     0x41,
     0x42,
     0x43,
@@ -70,19 +72,19 @@ BYTE keys[30] = {
     VK_TAB,
     VK_RETURN,
 };
-constexpr int KEYS_COUNT = 30;
-bool keyStates[256] = { 0 };
+constexpr int g_KEYS_COUNT = 30;
+bool g_keyStates[256] = { 0 };
 
 LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
 
-INT Initialize(HINSTANCE& hThisInstance);
+int  Initialize(HINSTANCE& hThisInstance);
 void AddTrayIcon(LPCWSTR pszToolTip);
 void RemoveTrayIcon(void);
-VOID DrawCat(VOID);
+void DrawCat(void);
 void MouseDragHelper(long lWindowX, long lWindowY, long lScreenX, long lScreenY, bool reset);
 void OnMouseDrag(long lPointerX, long lPointerY, long lDeltaX, long lDeltaY);
 void OnRightClick(long lPointerX, long lPointerY);
-void ShowPopupMenu(LONG lCursorX, LONG lCursorY);
+void ShowPopupMenu(long lCursorX, long lCursorY);
 void OnReset(void);
 bool CheckKeys(void);
 
@@ -96,10 +98,10 @@ int APIENTRY wWinMain(HINSTANCE _In_ hThisInstance, HINSTANCE _In_opt_ hPrevInst
     ULONGLONG timer = 0;
     ULONGLONG timerDelay = CLOCKS_PER_SEC / 5;
     
-    while (!bShouldQuit) {
+    while (!g_bShouldQuit) {
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
-                bShouldQuit = TRUE;
+                g_bShouldQuit = TRUE;
             }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -129,9 +131,9 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
     case WM_SIZE:
         break;
     case WM_DPICHANGED:
-        iWindowWidth  = ((RECT*)lParam)->right  - ((RECT*)lParam)->left;
-        iWindowHeight = ((RECT*)lParam)->bottom - ((RECT*)lParam)->top;
-        MoveWindow(hwnd, iWindowX, iWindowY, iWindowWidth, iWindowHeight, true);
+        g_iWindowWidth  = ((RECT*)lParam)->right  - ((RECT*)lParam)->left;
+        g_iWindowHeight = ((RECT*)lParam)->bottom - ((RECT*)lParam)->top;
+        MoveWindow(hwnd, g_iWindowX, g_iWindowY, g_iWindowWidth, g_iWindowHeight, true);
         break;
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
@@ -139,10 +141,10 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
             OnReset();
             break;
         case ID_CTX_LOCK_POSITION:
-            bPositionLock = TRUE;
+            g_bPositionLock = TRUE;
             break;
         case ID_CTX_UNLOCK_POSITION:
-            bPositionLock = FALSE;
+            g_bPositionLock = FALSE;
             break;
         case ID_CTX_EXIT:
             PostQuitMessage(0);
@@ -152,13 +154,13 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
         }
         break;
     case WM_APP:
-        if (lParam == WM_RBUTTONUP && hwnd == hwApp) {
+        if (lParam == WM_RBUTTONUP && hwnd == g_hwApp) {
             GetCursorPos(&pt);
             OnRightClick(pt.x, pt.y);
         }
         break;
     case WM_LBUTTONDOWN:
-        if (!bPositionLock) bDragging = TRUE;
+        if (!g_bPositionLock) g_bDragging = TRUE;
         x = GET_X_LPARAM(lParam);
         y = GET_Y_LPARAM(lParam);
         GetCursorPos(&pt);
@@ -166,28 +168,28 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
         SetCapture(hwnd);
         break;
     case WM_LBUTTONUP:
-        if (hwnd == hwApp && bDragging) {
-            bDragging = false;
+        if (hwnd == g_hwApp && g_bDragging) {
+            g_bDragging = false;
             ReleaseCapture();
         }
         break;
     case WM_MOUSEMOVE:
-        if (hwnd == hwApp)
-            SetFocus(hwApp);
-        else if (GetFocus() == hwApp)
-            SetFocus(hwApp);
-        if (hwnd == hwApp) {
+        if (hwnd == g_hwApp)
+            SetFocus(g_hwApp);
+        else if (GetFocus() == g_hwApp)
+            SetFocus(g_hwApp);
+        if (hwnd == g_hwApp) {
             x = GET_X_LPARAM(lParam);
             y = GET_Y_LPARAM(lParam);
-            if (bDragging) {
+            if (g_bDragging) {
                 GetCursorPos(&pt);
                 MouseDragHelper(x, y, pt.x, pt.y, false);
             }
         }
         break;
     case WM_RBUTTONDOWN:
-        if (hwnd == hwApp) {
-            SetForegroundWindow(hwApp);
+        if (hwnd == g_hwApp) {
+            SetForegroundWindow(g_hwApp);
             GetCursorPos(&pt);
             OnRightClick(pt.x, pt.y);
         }
@@ -198,11 +200,11 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
     return 0;
 }
 
-VOID DrawCat(VOID)
+void DrawCat(void)
 {
-    HDC hRealDC   = GetDC(hwApp);
+    HDC hRealDC   = GetDC(g_hwApp);
     HDC hdcMemory = CreateCompatibleDC(hRealDC);
-    SelectObject(hdcMemory, hbmCat);
+    SelectObject(hdcMemory, g_hbmCat);
 
     BLENDFUNCTION bfunc = { 0 };
     bfunc.BlendOp = AC_SRC_OVER;
@@ -210,11 +212,11 @@ VOID DrawCat(VOID)
     bfunc.SourceConstantAlpha = 0;
     bfunc.AlphaFormat = 0;
     
-    POINT pos = { iWindowX , iWindowY };
-    SIZE size = { iWindowWidth, iWindowHeight };
-    POINT bmpOffset = { 350 * frame, 0 };
+    POINT pos = { g_iWindowX , g_iWindowY };
+    SIZE size = { g_iWindowWidth, g_iWindowHeight };
+    POINT bmpOffset = { 350 * g_iFrame, 0 };
     UpdateLayeredWindow(
-        hwApp,
+        g_hwApp,
         hRealDC,
         &pos,
         &size,
@@ -223,9 +225,9 @@ VOID DrawCat(VOID)
         0x00ff0000,
         &bfunc,
         ULW_COLORKEY);
-    MoveWindow(hwApp, iWindowX, iWindowY, iWindowWidth, iWindowHeight, true);
+    MoveWindow(g_hwApp, g_iWindowX, g_iWindowY, g_iWindowWidth, g_iWindowHeight, true);
 
-    ReleaseDC(hwApp, hRealDC);
+    ReleaseDC(g_hwApp, hRealDC);
     DeleteDC(hdcMemory);
 }
 
@@ -235,29 +237,29 @@ bool CheckKeys(void)
     bool changed = false;
     bool any = false;
     bool state;
-    for (int i = 0; i < KEYS_COUNT; i++) {
+    for (int i = 0; i < g_KEYS_COUNT; i++) {
         // turn the most-significant-bit returned into a bool state
-        state = !!(GetAsyncKeyState(keys[i]) & (1 << 15));
-        changed = changed || (keyStates[i] != state);
+        state = !!(GetAsyncKeyState(g_KEYS[i]) & (1 << 15));
+        changed = changed || (g_keyStates[i] != state);
         any = any || state;
-        keyStates[i] = state;
+        g_keyStates[i] = state;
     }
     if (!any)
         // no paws on keys
-        frame = NO_PAWS_DOWN;
+        g_iFrame = NO_PAWS_DOWN;
     else if (changed) {
         if ( (rand() & 0xff) < 200)
             // usually alternate paw
-            frame = 3 - prev_paw;
+            g_iFrame = 3 - prev_paw;
         else
             // rarely repeat paws
-            frame = prev_paw;
-        prev_paw = frame;
+            g_iFrame = prev_paw;
+        prev_paw = g_iFrame;
     }
     return changed;
 }
 
-INT Initialize(HINSTANCE& hThisInstance)
+int Initialize(HINSTANCE& hThisInstance)
 {
     RECT rtAppRect;
     WNDCLASSEX winclApp = { 0 };
@@ -271,7 +273,6 @@ INT Initialize(HINSTANCE& hThisInstance)
     winclApp.cbSize = sizeof(WNDCLASSEX);
     winclApp.hIcon = LoadIcon(hThisInstance, L"APP_ICON_LARGE");
     winclApp.hIconSm = LoadIcon(hThisInstance, L"APP_ICON_SMALL");
-    //winclApp.hCursor = LoadCursor(NULL, IDC_SIZEALL);
     winclApp.hCursor = LoadCursor(NULL, IDC_ARROW);
     winclApp.lpszMenuName = NULL;
     winclApp.cbClsExtra = 0;
@@ -279,41 +280,41 @@ INT Initialize(HINSTANCE& hThisInstance)
     winclApp.hbrBackground = (HBRUSH)GetSysColorBrush(COLOR_BTNFACE);
 
     if (!RegisterClassEx(&winclApp))
-        return FALSE;
+        return false;
     
     RECT rtWorkArea;
     if (SystemParametersInfo(SPI_GETWORKAREA, 0, &rtWorkArea, 0)) {
-        iStartBarTop = rtWorkArea.bottom;
-        iWindowX = rtWorkArea.right - iWindowWidth;
+        g_iStartBarTop = rtWorkArea.bottom;
+        g_iWindowX = rtWorkArea.right - g_iWindowWidth;
     }
     else
-        iStartBarTop = GetSystemMetrics(SM_CYMAXIMIZED);
-    if (iStartBarTop != 0)
-        iWindowY = iStartBarTop - BAR_GAP;
+        g_iStartBarTop = GetSystemMetrics(SM_CYMAXIMIZED);
+    if (g_iStartBarTop != 0)
+        g_iWindowY = g_iStartBarTop - BAR_GAP;
             
-    hwApp = CreateWindowEx(
+    g_hwApp = CreateWindowEx(
         WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW, // | WS_EX_TRANSPARENT ,
         szAppClassName,
         APP_NAME,
         WS_POPUP | WS_VISIBLE,
-        iWindowX,
-        iWindowY,
-        iWindowWidth,
-        iWindowHeight,
+        g_iWindowX,
+        g_iWindowY,
+        g_iWindowWidth,
+        g_iWindowHeight,
         HWND_DESKTOP,
         NULL,
         hThisInstance,
         NULL);
-    GetClientRect(hwApp, &rtAppRect);
+    GetClientRect(g_hwApp, &rtAppRect);
 
     g_hInstance = hThisInstance;
 
-    hbmCat = LoadBitmap(hThisInstance, L"CATSPRITE");
-    GetObject(hbmCat, sizeof(bm), &bm);
+    g_hbmCat = LoadBitmap(hThisInstance, L"CATSPRITE");
+    GetObject(g_hbmCat, sizeof(g_bm), &g_bm);
 
     AddTrayIcon(L"Kitty");
 
-    return TRUE;
+    return true;
 }
 
 void MouseDragHelper(long lWindowX, long lWindowY, long lScreenX, long lScreenY, bool reset)
@@ -332,14 +333,14 @@ void MouseDragHelper(long lWindowX, long lWindowY, long lScreenX, long lScreenY,
 
 void OnMouseDrag(long lPointerX, long lPointerY, long lDeltaX, long lDeltaY)
 {
-    if (!bDragging)
+    if (!g_bDragging)
         return;
     RECT rtCurrentRect;
-    if (!GetWindowRect(hwApp, &rtCurrentRect))
+    if (!GetWindowRect(g_hwApp, &rtCurrentRect))
         return;
-    iWindowX = rtCurrentRect.left + lDeltaX;
-    iWindowY = rtCurrentRect.top + lDeltaY;
-    MoveWindow(hwApp, iWindowX, iWindowY, iWindowWidth, iWindowHeight, false);
+    g_iWindowX = rtCurrentRect.left + lDeltaX;
+    g_iWindowY = rtCurrentRect.top + lDeltaY;
+    MoveWindow(g_hwApp, g_iWindowX, g_iWindowY, g_iWindowWidth, g_iWindowHeight, false);
 }
 
 void OnRightClick(long lPointerX, long lPointerY)
@@ -347,13 +348,13 @@ void OnRightClick(long lPointerX, long lPointerY)
     ShowPopupMenu(lPointerX, lPointerY);
 }
 
-void ShowPopupMenu(LONG lCursorX, LONG lCursorY)
+void ShowPopupMenu(long lCursorX, long lCursorY)
 {
     HMENU hContextMenu = CreatePopupMenu();
 
     int i = 0;
     InsertMenu(hContextMenu, i++, MF_BYPOSITION | MF_STRING, ID_CTX_RESET, L"Reset Position");
-    if ( bPositionLock )
+    if ( g_bPositionLock )
         InsertMenu(hContextMenu, i++, MF_BYPOSITION | MF_STRING, ID_CTX_UNLOCK_POSITION, L"Unlock Position");
     else
         InsertMenu(hContextMenu, i++, MF_BYPOSITION | MF_STRING, ID_CTX_LOCK_POSITION, L"Lock Position");
@@ -361,16 +362,16 @@ void ShowPopupMenu(LONG lCursorX, LONG lCursorY)
 
     SetMenuDefaultItem(hContextMenu, ID_CTX_EXIT, FALSE);
 
-    SetFocus(hwApp);
-    SendMessage(hwApp, WM_INITMENUPOPUP, (WPARAM)hContextMenu, 0);
+    SetFocus(g_hwApp);
+    SendMessage(g_hwApp, WM_INITMENUPOPUP, (WPARAM)hContextMenu, 0);
 
     DWORD dwFlags = TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY;
     WORD cmd = TrackPopupMenu(
         hContextMenu, dwFlags,
         lCursorX, lCursorY,
-        0, hwApp, NULL);
+        0, g_hwApp, NULL);
 
-    SendMessage(hwApp, WM_COMMAND, cmd, 0);
+    SendMessage(g_hwApp, WM_COMMAND, cmd, 0);
     DestroyMenu(hContextMenu);
 }
 
@@ -378,13 +379,13 @@ void OnReset(void)
 {
     RECT rtWorkArea;
     if (SystemParametersInfo(SPI_GETWORKAREA, 0, &rtWorkArea, 0)) {
-        iStartBarTop = rtWorkArea.bottom;
-        iWindowX = rtWorkArea.right - iWindowWidth;
+        g_iStartBarTop = rtWorkArea.bottom;
+        g_iWindowX = rtWorkArea.right - g_iWindowWidth;
     }
     else
-        iStartBarTop = GetSystemMetrics(SM_CYMAXIMIZED);
-    if (iStartBarTop != 0)
-        iWindowY = iStartBarTop - BAR_GAP;
+        g_iStartBarTop = GetSystemMetrics(SM_CYMAXIMIZED);
+    if (g_iStartBarTop != 0)
+        g_iWindowY = g_iStartBarTop - BAR_GAP;
 
     DrawCat();
 }
@@ -393,7 +394,7 @@ void AddTrayIcon(LPCWSTR pszToolTip)
 {
     NOTIFYICONDATA nid = { 0 };
     nid.cbSize           = sizeof(NOTIFYICONDATA);
-    nid.hWnd             = hwApp;
+    nid.hWnd             = g_hwApp;
     nid.uID              = ID_TRAY_ICON;
     nid.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_APP;
@@ -406,7 +407,7 @@ void RemoveTrayIcon(void)
 {
     NOTIFYICONDATA nid = { 0 };
     nid.cbSize = sizeof(NOTIFYICONDATA);
-    nid.hWnd   = hwApp;
+    nid.hWnd   = g_hwApp;
     nid.uID    = ID_TRAY_ICON;
     Shell_NotifyIcon(NIM_DELETE, &nid);
 }
